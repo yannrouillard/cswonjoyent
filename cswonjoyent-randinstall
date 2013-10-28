@@ -1,0 +1,310 @@
+#!/bin/bash
+#
+# Copyright 2013 Yann Rouillard.
+# All rights reserved.  Use is subject to license terms.
+#
+# cswonjoyent-randinstall -- Test random install of an opencsw package on a Joyent virtual machine
+#
+# Redistribution and/or use, with or without modification, is
+# permitted.  This software is without warranty of any kind.  The
+# author(s) shall not be liable in the event that use of the
+# software causes damage.
+#
+# Author: Yann Rouillard <yann@pleiades.fr.eu.org>
+#
+
+# -- Standard script initialization --------------------------------------------
+
+set -o errexit # quitte immediatement si une commande retourne une erreur
+set -o nounset # retourne une erreur si une variable non initialisee est utilise
+
+PROGRAM_NAME=$(basename $0)
+
+
+# -- Useful functions ---------------------------------------------------------
+
+#
+# Purpose:   Test if the given commands exist on the current system
+# Arguments: - Name of the commands...
+# Returns:   Exit code of the command 
+#
+function test_commands() {
+  local BAD_COMMANDS=""
+
+  for COMMAND in "$@"; do
+    command -v "${COMMAND}" >/dev/null 2>&1 || BAD_COMMANDS+=" ${COMMAND}"
+  done
+
+  [[ -z "$BAD_COMMANDS" ]] || { echo "${BAD_COMMANDS}"; return 1; }
+}
+#
+# Purpose:   Execute the given command by ssh on the given host
+# Arguments: - Name of the remote host
+#            - Command that will be ran on the remote host
+# Returns:   Exit code of the command 
+#
+function ssh_command() {
+  local HOST="$1" COMMAND="$2"
+
+  local SSH_OPTIONS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -x" 
+  ssh ${SSH_OPTIONS} root@${HOST} "${COMMAND}" || return 255
+}
+
+
+#
+# Purpose: call the given method of the joyent cloud api
+#          see http://apidocs.joyent.com/cloudapi/
+# Arguments: - username of the joyent cloud user
+#            - ssh key of the joyent cloud user
+#            - HTTP methode to use (GET, POST, DELETE...)
+#            - Url of the REST API
+#            - Parameters to pass to the remote method
+# Returns: (stdout) Method output data in json format
+#
+
+CLOUD_URL="${CLOUD_URL:-https://us-west-1.api.joyentcloud.com}"
+
+function joyent_cloudapi() {
+  local LOGIN="$1" SSH_KEY="$2" METHOD="$3" URL="$4"
+  shift 4
+
+  local NOW=$(date -u "+%a, %d %h %Y %H:%M:%S GMT")
+  local SIGNATURE=$(echo ${NOW} | tr -d '\n' | openssl dgst -sha256 -sign ${SSH_KEY} | openssl enc -e -a | tr -d '\n')
+
+  local URL_PARAMETERS="" POST_DATA=""
+  case ${METHOD} in
+    GET) 
+      for DATA in "$@"; do
+        URL_PARAMETERS+="${DATA}&"
+      done;;
+    POST)
+      for DATA in "$@"; do
+        POST_DATA+=" --data ${DATA}"
+      done;;
+  esac
+
+  curl --silent \
+    --request "$METHOD" \
+	  --header "Accept: application/json" \
+	  --header "api-version: ~7.0" \
+    --header "Date: ${NOW}" \
+	  --header "Authorization: Signature keyId=\"/${LOGIN}/keys/APIKey\",algorithm=\"rsa-sha256\" ${SIGNATURE}" \
+	  --url "${CLOUD_URL}/${LOGIN}${URL}${URL_PARAMETERS:+?}${URL_PARAMETERS}" \
+    $POST_DATA
+  echo "";
+}
+
+#
+# Purpose:   Create a virtual machine in the joyent cloud
+# Arguments: - name of the image to use to initialize the VM
+#            - type of VM instance to create
+#            - login of the joyent cloud user
+# Returns:   (stdout) The id of the virtual machine created
+#
+function joyent_create_virtual_machine() {
+  local IMAGE_NAME="$1" INSTANCE_TYPE="$2" LOGIN="$3" SSH_KEY="$4"
+
+  local IMAGE_ID=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/images" "name=${IMAGE_NAME}" | jq --raw-output "max_by(.published_at).id")
+  local MACHINE_INFO=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "POST" "/machines" "image=${IMAGE_ID}" "package=${INSTANCE_TYPE}")
+  local MACHINE_ID=$(jq --raw-output .id <<< "${MACHINE_INFO}")
+
+  while true; do
+    local STATE=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .state)
+     [[ "$STATE" != "running" ]] || break
+    sleep 5
+  done
+
+  echo ${MACHINE_ID}
+}
+
+#
+# Purpose:   Get the IP address of a virtual machine 
+# Arguments: - id of the virtual machine to destroy
+#            - login of the joyent cloud user
+#            - ssh key of the joyent cloud user
+# Returns:   (stdout) The IP address
+#
+function joyent_get_virtual_machine_ip() {
+  local MACHINE_ID="$1" LOGIN="$2" SSH_KEY="$3"
+  joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .ips[0]
+}
+
+
+#
+# Purpose:   Destroy the given joyent virtual machine
+# Arguments: - id of the virtual machine to destroy
+#            - login of the joyent cloud user
+#            - ssh key of the joyent cloud user
+# Returns:   Nothing
+#
+function joyent_tear_down_virtual_machine() {
+  local MACHINE_ID="$1" LOGIN="$2" SSH_KEY="$3"
+
+  joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "POST" "/machines/${MACHINE_ID}?action=stop"
+  while true; do
+    STATE=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .state)
+    [[ "$STATE" != "stopped" ]] || break
+    sleep 5
+  done
+  joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "DELETE" "/machines/${MACHINE_ID}"
+}
+
+#
+# Purpose:  Configure the opencsw stack on the given virtual machine
+# Arguments: - IP address of the virtual machine
+# Returns:   Nothing
+#
+function setup_virtual_machine() {
+  local VM_IP="$1"
+  local COMMANDS=""
+  COMMANDS+="mkdir -p /opt/csw/bin &&"
+  COMMANDS+=" wget --quiet --no-check-certificate -O /opt/csw/bin/svr4pkg https://raw.github.com/${USERNAME}/svr4pkg/master/svr4pkg &&"
+  COMMANDS+=" chmod 0755 /opt/csw/bin/svr4pkg &&"
+  COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/pkginfo &&"
+  COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/pkgadd &&"
+  COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/pkgrm &&"
+  COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/pkgparam &&"
+  COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/pkgchk &&"
+  COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/installf &&"
+  COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/removef &&"
+  COMMANDS+=" LC_ALL=C /opt/csw/bin/svr4pkg add -d http://buildfarm.opencsw.org/experimental/yann/pkgutil-2.6.6b2,REV=2013.09.02-SunOS5.10-all-CSW.pkg &&"
+  COMMANDS+=" sed -i -e '/^#mirror/a mirror=http://mirror.opencsw.org/opencsw/unstable' /etc/opt/csw/pkgutil.conf &&"
+  COMMANDS+=" LC_ALL=C /opt/csw/bin/pkgutil --yes -u svr4pkg"
+
+  ssh_command "${VM_IP}" "$COMMANDS" >/dev/null || return 255
+}
+
+#
+# Purpose: Select a random package in the list of 
+#          packages available through opencsw
+#
+# Arguments: - IP address of the virtual machine
+#
+# Returns:  (stdout) A package name choosed randomly
+#
+function select_random_package() {
+  local VM_IP="$1"
+  local PKG_COUNT=$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | wc -l")
+  local RANDOM_INDEX=$((RANDOM % (PKG_COUNT - 1) + 1))
+  ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | sed -n -e \"${RANDOM_INDEX}p\" | awk '{ print \$2 }'" || return 255
+}
+
+#
+# Purpose:   Try to install the given package on the
+#            given virtual machine
+# Arguments: - the name of the package to install
+#            - the IP address of the virtual machine
+# Returns:   0 if the installation succeeded without error
+#            1 otherwise
+#            (stdout) The error messages if any
+#
+function try_package_installation() {
+  local PKG_NAME="$1" VM_IP="$2"
+  local RET=""
+
+  local OUTPUT="$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil --yes -i ${PKG_NAME} 2>&1")" || RET=$?
+  OUTPUT=$(echo "${OUTPUT}" | sed -n -e "1,/Installing ${PKG_NAME}/d;/^#/d;p")
+
+  ( [[ -z "$OUTPUT" ]] && [[ $RET -eq 0 ]] ) || return 1
+} 
+
+
+#
+# Purpose:   Display the help of the script
+# Arguments: - the exit code
+# Returns:   Nothing
+#
+function usage() {
+  local RET="$1"
+
+  cat <<EOF
+Usage: ${PROGRAM_NAME} [--quiet] [--create-only] JOYENT_USERNAME SSH_KEY [PACKAGE_NAME]
+Test the installation of a random Opencsw package on a temporary virtual machine created on the joyent cloud
+EOF
+  exit ${RET}
+}
+
+
+#
+# Purpose:   Display an error message before existing the current script
+# Arguments: - the error message
+#            - the exit code
+# Returns:   Nothing
+#
+function error() {
+  local MESSAGE="$1" RET="$2"
+  echo "ERROR: ${MESSAGE}" >&2
+  exit ${RET}
+}
+
+#
+# Purpose:   Display a verbose informative message
+# Arguments: - the message to display
+# Returns:   Nothing
+#
+function verbose() {
+  local MESSAGE="$1"
+  [[ "${VERBOSE}" -ne 0 ]] && echo "${MESSAGE}"
+}
+
+
+# -- Main program -------------------------------------------------------------
+
+# Default options value
+VERBOSE=1
+CREATE_ONLY=0
+PACKAGE_NAME=""
+
+while [[ $# -ne 0 ]]; do
+  case $1 in
+    --quiet)
+      VERBOSE=0;;
+    --create-only)
+      CREATE_ONLY=1;;
+    --*)
+      usage 1;;
+    *)
+      break;;
+  esac
+  shift
+done
+  
+[[ $# -ge 2 ]] || usage 1
+
+USERNAME="$1"
+SSH_KEY="$2"
+[[ $# -lt 3 ]] || PACKAGE_NAME="$3"
+
+BAD_COMMANDS=$(test_commands curl jq ssh) || error "${PROGRAM_NAME} needs the following commands that are missing: ${BAD_COMMANDS}" 2
+
+verbose "Creating virtual machine..."
+VM_ID=$(joyent_create_virtual_machine "base64" "g3-standard-0.25-kvm" "${USERNAME}" "${SSH_KEY}" )
+[[ -n ${VM_ID} ]] || error "Can't create virtual machine" 3
+
+# We make sure that the virtual machine will be destroyed upon exiting the script
+trap "verbose \"Destroying virtual machine...\"; joyent_tear_down_virtual_machine \"${VM_ID}\" \"${USERNAME}\" \"${SSH_KEY}\"" EXIT
+
+# We wait some times to be sure the ssh service is up and running
+sleep 30 
+VM_IP=$(joyent_get_virtual_machine_ip "${VM_ID}" "${USERNAME}" "${SSH_KEY}") || error "Can't connect to the virtual machine" 4
+
+verbose "Setting up Opencsw stack on virtual machine ${VM_IP}..."
+setup_virtual_machine "${VM_IP}" || error "Can't setup virtual machine" 5
+
+if [[ "${CREATE_ONLY}" -ne 0 ]]; then
+  trap - EXIT
+  exit 0
+fi
+
+[[ -n "${PACKAGE_NAME}" ]] || PACKAGE_NAME=$(select_random_package "${VM_IP}") || error "Can't connect to virtual machine" 6
+
+verbose "Trying to install package ${PACKAGE_NAME}..."
+OUTPUT=$(try_package_installation "${PACKAGE_NAME}" "${VM_IP}") || {
+  ERROR_MESSAGE=$(printf "Installation of package ${PACKAGE_NAME} failed\nError output: $OUTPUT")
+  error "${ERROR_MESSAGE}" 7
+}
+
+verbose "Installation of package ${PACKAGE_NAME} successful"
+
+
+# vim: autoindent tabstop=2 shiftwidth=2 expandtab softtabstop=2 filetype=sh
