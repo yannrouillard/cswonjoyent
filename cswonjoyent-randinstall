@@ -244,7 +244,7 @@ function error() {
 #
 function verbose() {
   local MESSAGE="$1"
-  [[ "${VERBOSE}" -ne 0 ]] && echo "${MESSAGE}"
+  [[ "${VERBOSE}" -eq 0 ]] || echo "${MESSAGE}"
 }
 
 
