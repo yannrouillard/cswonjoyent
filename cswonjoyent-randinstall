@@ -205,6 +205,7 @@ function try_package_installation() {
   local OUTPUT="$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil --yes -i ${PKG_NAME} 2>&1" "${SSH_KEY}")" || RET=$?
   OUTPUT=$(echo "${OUTPUT}" | sed -n -e "1,/Installing ${PKG_NAME}/d;/^#/d;p")
 
+  echo -n "${OUTPUT}"
   ( [[ -z "$OUTPUT" ]] && [[ $RET -eq 0 ]] ) || return 1
 } 
 
