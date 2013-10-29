@@ -44,9 +44,9 @@ function test_commands() {
 # Returns:   Exit code of the command 
 #
 function ssh_command() {
-  local HOST="$1" COMMAND="$2"
+  local HOST="$1" COMMAND="$2" SSH_KEY="$3"
 
-  local SSH_OPTIONS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -x" 
+  local SSH_OPTIONS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -x" 
   ssh ${SSH_OPTIONS} root@${HOST} "${COMMAND}" || return 255
 }
 
@@ -155,7 +155,7 @@ function joyent_tear_down_virtual_machine() {
 # Returns:   Nothing
 #
 function setup_virtual_machine() {
-  local VM_IP="$1"
+  local VM_IP="$1" SSH_KEY="$2"
   local COMMANDS=""
   COMMANDS+="mkdir -p /opt/csw/bin &&"
   COMMANDS+=" wget --quiet --no-check-certificate -O /opt/csw/bin/svr4pkg https://raw.github.com/${USERNAME}/svr4pkg/master/svr4pkg &&"
@@ -171,7 +171,7 @@ function setup_virtual_machine() {
   COMMANDS+=" sed -i -e '/^#mirror/a mirror=http://mirror.opencsw.org/opencsw/unstable' /etc/opt/csw/pkgutil.conf &&"
   COMMANDS+=" LC_ALL=C /opt/csw/bin/pkgutil --yes -u svr4pkg"
 
-  ssh_command "${VM_IP}" "$COMMANDS" >/dev/null || return 255
+  ssh_command "${VM_IP}" "${COMMANDS}" "${SSH_KEY}" >/dev/null || return 255
 }
 
 #
@@ -183,10 +183,10 @@ function setup_virtual_machine() {
 # Returns:  (stdout) A package name choosed randomly
 #
 function select_random_package() {
-  local VM_IP="$1"
-  local PKG_COUNT=$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | wc -l")
+  local VM_IP="$1" SSH_KEY="$2"
+  local PKG_COUNT=$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | wc -l" "${SSH_KEY}")
   local RANDOM_INDEX=$((RANDOM % (PKG_COUNT - 1) + 1))
-  ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | sed -n -e \"${RANDOM_INDEX}p\" | awk '{ print \$2 }'" || return 255
+  ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | sed -n -e \"${RANDOM_INDEX}p\" | awk '{ print \$2 }'" "${SSH_KEY}" || return 255
 }
 
 #
@@ -199,10 +199,10 @@ function select_random_package() {
 #            (stdout) The error messages if any
 #
 function try_package_installation() {
-  local PKG_NAME="$1" VM_IP="$2"
+  local PKG_NAME="$1" VM_IP="$2" SSH_KEY="$3"
   local RET=""
 
-  local OUTPUT="$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil --yes -i ${PKG_NAME} 2>&1")" || RET=$?
+  local OUTPUT="$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil --yes -i ${PKG_NAME} 2>&1" "${SSH_KEY}")" || RET=$?
   OUTPUT=$(echo "${OUTPUT}" | sed -n -e "1,/Installing ${PKG_NAME}/d;/^#/d;p")
 
   ( [[ -z "$OUTPUT" ]] && [[ $RET -eq 0 ]] ) || return 1
@@ -289,17 +289,17 @@ sleep 30
 VM_IP=$(joyent_get_virtual_machine_ip "${VM_ID}" "${USERNAME}" "${SSH_KEY}") || error "Can't connect to the virtual machine" 4
 
 verbose "Setting up Opencsw stack on virtual machine ${VM_IP}..."
-setup_virtual_machine "${VM_IP}" || error "Can't setup virtual machine" 5
+setup_virtual_machine "${VM_IP}" "${SSH_KEY}" || error "Can't setup virtual machine" 5
 
 if [[ "${CREATE_ONLY}" -ne 0 ]]; then
   trap - EXIT
   exit 0
 fi
 
-[[ -n "${PACKAGE_NAME}" ]] || PACKAGE_NAME=$(select_random_package "${VM_IP}") || error "Can't connect to virtual machine" 6
+[[ -n "${PACKAGE_NAME}" ]] || PACKAGE_NAME=$(select_random_package "${VM_IP}" "${SSH_KEY}") || error "Can't connect to virtual machine" 6
 
 verbose "Trying to install package ${PACKAGE_NAME}..."
-OUTPUT=$(try_package_installation "${PACKAGE_NAME}" "${VM_IP}") || {
+OUTPUT=$(try_package_installation "${PACKAGE_NAME}" "${VM_IP}" "${SSH_KEY}") || {
   ERROR_MESSAGE=$(printf "Installation of package ${PACKAGE_NAME} failed\nError output: $OUTPUT")
   error "${ERROR_MESSAGE}" 7
 }
