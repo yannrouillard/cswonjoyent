@@ -206,11 +206,13 @@ function try_package_installation() {
   OUTPUT=$(echo "${OUTPUT}" | sed -n -e "1,/^=> Installing ${PKG_NAME}-.*(\([0-9]\+\)\/\1)$/d;/^#/d;p" | \
   sed -e '/Installing class <.*>/d' | \
   sed -e '/^\/*[^ ]*\/[^ ]*[^/ ]$/d' | \
-  sed -e '/^\(Modifying\|Registering\| *(TeX will be registered\)/d' )
-  
+  sed -e '/^\(Modifying\|Registering\)/d' | \
+  sed -e '/will be registered/d' | \
+  sed -e '/Compiling \.py files to bytecode/d' )
+
   echo -n "${OUTPUT}"
   ( [[ -z "$OUTPUT" ]] && [[ $RET -eq 0 ]] ) || return 1
-} 
+}
 
 
 #
