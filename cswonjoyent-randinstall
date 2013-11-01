@@ -290,12 +290,17 @@ VM_ID=$(joyent_create_virtual_machine "base64" "g3-standard-0.25-kvm" "${USERNAM
 # We make sure that the virtual machine will be destroyed upon exiting the script
 trap "verbose \"Destroying virtual machine...\"; joyent_tear_down_virtual_machine \"${VM_ID}\" \"${USERNAME}\" \"${SSH_KEY}\"" EXIT
 
-# We wait some times to be sure the ssh service is up and running
-sleep 30 
 VM_IP=$(joyent_get_virtual_machine_ip "${VM_ID}" "${USERNAME}" "${SSH_KEY}") || error "Can't connect to the virtual machine" 4
 
 verbose "Setting up Opencsw stack on virtual machine ${VM_IP}..."
-setup_virtual_machine "${VM_IP}" "${SSH_KEY}" || error "Can't setup virtual machine" 5
+TRY=10
+while ! setup_virtual_machine "${VM_IP}" "${SSH_KEY}" && [[ ${TRY} -ne 0 ]]; do
+  # We wait some times to be sure the ssh service is up and running
+  sleep 30 
+  TRY=$((TRY - 1)) 
+done
+[[ $TRY -ne 0 ]] || error "Can't setup virtual machine" 5
+
 
 if [[ "${CREATE_ONLY}" -ne 0 ]]; then
   trap - EXIT
