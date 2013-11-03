@@ -298,12 +298,14 @@ VM_IP=$(joyent_get_virtual_machine_ip "${VM_ID}" "${USERNAME}" "${SSH_KEY}") || 
 
 verbose "Setting up Opencsw stack on virtual machine ${VM_IP}..."
 TRY=10
-while ! setup_virtual_machine "${VM_IP}" "${SSH_KEY}" && [[ ${TRY} -ne 0 ]]; do
+while [[ ${TRY} -ne 0 ]]; do
   # We wait some times to be sure the ssh service is up and running
   sleep 30 
   TRY=$((TRY - 1)) 
+  OUTPUT=$(setup_virtual_machine "${VM_IP}" "${SSH_KEY}" 2>&1) || continue
+  break
 done
-[[ $TRY -ne 0 ]] || error "Can't setup virtual machine" 5
+[[ $TRY -ne 0 ]] || error "Can't setup virtual machine: ${OUTPUT}" 5
 
 
 if [[ "${CREATE_ONLY}" -ne 0 ]]; then
