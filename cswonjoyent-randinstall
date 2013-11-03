@@ -46,8 +46,12 @@ function test_commands() {
 function ssh_command() {
   local HOST="$1" COMMAND="$2" SSH_KEY="$3"
 
-  local SSH_OPTIONS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -x" 
-  ssh ${SSH_OPTIONS} root@${HOST} "${COMMAND}" || return 255
+  local SSH_OPTIONS="-i ${SSH_KEY}"
+  SSH_OPTIONS+=" -o StrictHostKeyChecking=no"
+  SSH_OPTIONS+=" -o UserKnownHostsFile=/dev/null"
+  SSH_OPTIONS+=" -o LogLevel=ERROR -x"
+  SSH_OPTIONS+=" -o ConnectTimeout=5"
+  ssh ${SSH_OPTIONS} root@${HOST} "${COMMAND}" || return $?
 }
 
 
