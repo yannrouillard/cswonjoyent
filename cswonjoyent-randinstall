@@ -175,7 +175,7 @@ function setup_virtual_machine() {
   COMMANDS+=" sed -i -e '/^#mirror/a mirror=http://mirror.opencsw.org/opencsw/unstable' /etc/opt/csw/pkgutil.conf &&"
   COMMANDS+=" LC_ALL=C /opt/csw/bin/pkgutil --temp=http://buildfarm.opencsw.org/opencsw/experimental/svr4pkg  --yes -u svr4pkg"
 
-  ssh_command "${VM_IP}" "${COMMANDS}" "${SSH_KEY}" >/dev/null || return 255
+  ssh_command "${VM_IP}" "${COMMANDS}" "${SSH_KEY}" || return $?
 }
 
 #
@@ -190,7 +190,7 @@ function select_random_package() {
   local VM_IP="$1" SSH_KEY="$2"
   local PKG_COUNT=$(ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | wc -l" "${SSH_KEY}")
   local RANDOM_INDEX=$((RANDOM % (PKG_COUNT - 1) + 1))
-  ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | sed -n -e \"${RANDOM_INDEX}p\" | awk '{ print \$2 }'" "${SSH_KEY}" || return 255
+  ssh_command "${VM_IP}" "LC_ALL=C /opt/csw/bin/pkgutil -a | sed -n -e \"${RANDOM_INDEX}p\" | awk '{ print \$2 }'" "${SSH_KEY}" || return $?
 }
 
 #
