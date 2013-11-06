@@ -108,9 +108,29 @@ function joyent_cloudapi() {
 function joyent_create_virtual_machine() {
   local IMAGE_NAME="$1" INSTANCE_TYPE="$2" LOGIN="$3" SSH_KEY="$4"
 
+  local TAG_VALUE="$(hostname)-$$-$(date +%s)"
+
   local IMAGE_ID=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/images" "name=${IMAGE_NAME}" | jq --raw-output "max_by(.published_at).id")
-  local MACHINE_INFO=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "POST" "/machines" "image=${IMAGE_ID}" "package=${INSTANCE_TYPE}")
+  local MACHINE_INFO=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "POST" "/machines" "image=${IMAGE_ID}" "package=${INSTANCE_TYPE}" "tag.creation_id=${TAG_VALUE}")
+
+  # If a network error happens during the api call, we would not get the virtual machine id
+  # although the virtual machine would really be created at joyent
+  # To workaround this, we find the machine after using the unique tag we associated with the
+  # virtual machine
+  if [[ -z ${MACHINE_INFO} ]]; then
+    TRY=10
+    while [[ ${TRY} -ne 0 ]]; do
+      MACHINE_INFO=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines" "package=${INSTANCE_TYPE}" "tag.creation_id=${TAG_VALUE}")
+      MACHINE_INFO=$(jq --raw-output .[0] <<< "${MACHINE_INFO}")
+      [[ -z ${MACHINE_INFO} ]] || break
+     sleep 30
+     TRY=$((TRY - 1))
+    done
+  fi
+
   local MACHINE_ID=$(jq --raw-output .id <<< "${MACHINE_INFO}")
+
+  [[ -n "${MACHINE_ID}" ]] || return 1
 
   while true; do
     local STATE=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .state)
