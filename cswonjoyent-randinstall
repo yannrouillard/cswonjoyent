@@ -72,7 +72,7 @@ function joyent_cloudapi() {
   local LOGIN="$1" SSH_KEY="$2" METHOD="$3" URL="$4"
   shift 4
 
-  local NOW=$(date -u "+%a, %d %h %Y %H:%M:%S GMT")
+  local NOW=$(LC_ALL=C date -u "+%a, %d %h %Y %H:%M:%S GMT")
   local SIGNATURE=$(echo ${NOW} | tr -d '\n' | openssl dgst -sha256 -sign ${SSH_KEY} | openssl enc -e -a | tr -d '\n')
 
   local URL_PARAMETERS="" POST_DATA=""
