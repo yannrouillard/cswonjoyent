@@ -308,8 +308,7 @@ SSH_KEY="$2"
 BAD_COMMANDS=$(test_commands curl jq ssh) || error "${PROGRAM_NAME} needs the following commands that are missing: ${BAD_COMMANDS}" 2
 
 verbose "Creating virtual machine..."
-VM_ID=$(joyent_create_virtual_machine "base64" "g3-standard-0.25-kvm" "${USERNAME}" "${SSH_KEY}" )
-[[ -n ${VM_ID} ]] || error "Can't create virtual machine" 3
+VM_ID=$(joyent_create_virtual_machine "base64" "g3-standard-0.25-kvm" "${USERNAME}" "${SSH_KEY}" ) || error "Can't create virtual machine" 3
 
 # We make sure that the virtual machine will be destroyed upon exiting the script
 trap "verbose \"Destroying virtual machine...\"; joyent_tear_down_virtual_machine \"${VM_ID}\" \"${USERNAME}\" \"${SSH_KEY}\"" EXIT
