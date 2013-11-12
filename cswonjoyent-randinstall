@@ -135,6 +135,7 @@ function joyent_create_virtual_machine() {
   while true; do
     local STATE=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .state)
      [[ "$STATE" != "running" ]] || break
+     [[ "$STATE" != "failed" ]] || return 255
     sleep 5
   done
 
