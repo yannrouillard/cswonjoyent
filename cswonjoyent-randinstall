@@ -130,7 +130,9 @@ function joyent_create_virtual_machine() {
 
   local MACHINE_ID=$(jq --raw-output .id <<< "${MACHINE_INFO}")
 
-  [[ -n "${MACHINE_ID}" ]] || return 1
+  if [[ -z "${MACHINE_ID}" ]] || [[ "${MACHINE_ID}" = "null" ]]; then
+    return 1
+  fi
 
   while true; do
     local STATE=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .state)
