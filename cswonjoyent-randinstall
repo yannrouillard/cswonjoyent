@@ -122,7 +122,7 @@ function joyent_create_virtual_machine() {
     while [[ ${TRY} -ne 0 ]]; do
       MACHINE_INFO=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines" "package=${INSTANCE_TYPE}" "tag.creation_id=${TAG_VALUE}")
       MACHINE_INFO=$(jq --raw-output .[0] <<< "${MACHINE_INFO}")
-      [[ -z ${MACHINE_INFO} ]] || break
+      [[ -z ${MACHINE_INFO} ]] || [[ "${MACHINE_INFO}" = "null" ]] || break
      sleep 30
      TRY=$((TRY - 1))
     done
