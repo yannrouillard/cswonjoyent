@@ -167,13 +167,20 @@ function joyent_get_virtual_machine_ip() {
 function joyent_tear_down_virtual_machine() {
   local MACHINE_ID="$1" LOGIN="$2" SSH_KEY="$3"
 
-  joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "POST" "/machines/${MACHINE_ID}?action=stop" >/dev/null
+  TRY=0
   while true; do
+    [[ $((TRY++ % 10)) != 0 ]] || joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "POST" "/machines/${MACHINE_ID}?action=stop" >/dev/null
     STATE=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .state)
     [[ "$STATE" != "stopped" ]] || break
     sleep 5
   done
-  joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "DELETE" "/machines/${MACHINE_ID}" >/dev/null
+  TRY=0
+  while true; do
+    joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "DELETE" "/machines/${MACHINE_ID}" >/dev/null
+    sleep 5
+    STATE=$(joyent_cloudapi "${LOGIN}" "${SSH_KEY}" "GET" "/machines/${MACHINE_ID}" | jq --raw-output .state)
+    [[ "$STATE" != "deleted" ]] || break
+  done
 }
 
 #
