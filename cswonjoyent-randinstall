@@ -191,7 +191,8 @@ function joyent_tear_down_virtual_machine() {
 function setup_virtual_machine() {
   local VM_IP="$1" SSH_KEY="$2"
   local COMMANDS=""
-  COMMANDS+="mkdir -p /opt/csw/bin &&"
+  COMMANDS+=" LC_ALL=C /opt/csw/bin/pkginfo CSWpkgutil || ("
+  COMMANDS+=" mkdir -p /opt/csw/bin &&"
   COMMANDS+=" wget --quiet --no-check-certificate -O /opt/csw/bin/svr4pkg https://raw.github.com/${USERNAME}/svr4pkg/master/svr4pkg &&"
   COMMANDS+=" chmod 0755 /opt/csw/bin/svr4pkg &&"
   COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/pkginfo &&"
@@ -204,6 +205,7 @@ function setup_virtual_machine() {
   COMMANDS+=" LC_ALL=C /opt/csw/bin/svr4pkg add -d http://buildfarm.opencsw.org/experimental/yann/pkgutil-2.6.6b2,REV=2013.09.02-SunOS5.10-all-CSW.pkg &&"
   COMMANDS+=" sed -i -e '/^#mirror/a mirror=http://mirror.opencsw.org/opencsw/unstable' /etc/opt/csw/pkgutil.conf &&"
   COMMANDS+=" LC_ALL=C /opt/csw/bin/pkgutil --temp=http://buildfarm.opencsw.org/opencsw/experimental/svr4pkg  --yes -u svr4pkg"
+  COMMANDS+=" )"
 
   ssh_command "${VM_IP}" "${COMMANDS}" "${SSH_KEY}" || return $?
 }
