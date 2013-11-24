@@ -202,7 +202,7 @@ function setup_virtual_machine() {
   COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/pkgchk &&"
   COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/installf &&"
   COMMANDS+=" ln -sf /opt/csw/bin/svr4pkg /opt/csw/bin/removef &&"
-  COMMANDS+=" LC_ALL=C /opt/csw/bin/svr4pkg add -d http://buildfarm.opencsw.org/experimental/yann/pkgutil-2.6.6b2,REV=2013.09.02-SunOS5.10-all-CSW.pkg &&"
+  COMMANDS+=" LC_ALL=C /opt/csw/bin/pkgadd -d http://get.opencsw.org/now &&"
   COMMANDS+=" sed -i -e '/^#mirror/a mirror=http://mirror.opencsw.org/opencsw/unstable' /etc/opt/csw/pkgutil.conf &&"
   COMMANDS+=" LC_ALL=C /opt/csw/bin/pkgutil --temp=http://buildfarm.opencsw.org/opencsw/experimental/svr4pkg  --yes -u svr4pkg"
   COMMANDS+=" )"
