@@ -192,6 +192,7 @@ function setup_virtual_machine() {
   local VM_IP="$1" SSH_KEY="$2"
   local COMMANDS=""
   COMMANDS+=" LC_ALL=C /opt/csw/bin/pkginfo CSWpkgutil || ("
+  COMMANDS+=" yes | pkgin install perl &&"
   COMMANDS+=" mkdir -p /opt/csw/bin &&"
   COMMANDS+=" wget --quiet --no-check-certificate -O /opt/csw/bin/svr4pkg https://raw.github.com/${USERNAME}/svr4pkg/master/svr4pkg &&"
   COMMANDS+=" chmod 0755 /opt/csw/bin/svr4pkg &&"
